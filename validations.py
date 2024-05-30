@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 import yaml
-from csv_tools import save_to_csv, read_from_csv
+from csv_tools import save_to_csv, read_from_csv, filter_logs
 from unittest import result
 
 def get_config_list():
@@ -68,10 +68,6 @@ def get_dataset_list(data_path):
         if os.path.isdir(dataset_path):
             dataset_list.append({'Name': dataset_name, 'Path': dataset_path})
     return dataset_list
-
-def filter_logs(logs:list, *fields):
-    logs = [log for log in logs if all(field in log for field in fields)]
-    return logs
 
 def test_model(model, dataset):
     print(f"Testing the model {model['Name']} on the dataset {dataset['Name']}...")

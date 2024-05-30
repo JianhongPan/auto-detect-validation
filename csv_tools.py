@@ -40,3 +40,7 @@ def read_from_csv(read_path:str):
         for row in reader:
             rows.append(row)
     return rows
+
+def filter_logs(logs:list, *fields):
+    logs = [log for log in logs if all(field in log for field in fields)]
+    return logs
