@@ -9,17 +9,17 @@ def save_to_csv(save_path:str, **row):
             pass
     
     import csv
-    with open('results.csv', 'r') as f:
+    with open(save_path, 'r') as f:
         reader = csv.reader(f)
         header = next(reader, None)
 
-    with open('results.csv', 'a') as f:
+    with open(save_path, 'a') as f:
         writer = csv.writer(f)
         # if the first line is not the header, write the header
         if not header:
             writer.writerow([*row.keys()])
         # check if the fields in the header exist in the row
-        elif all(key in header for key in row.keys()):
+        elif any(key not in row for key in header):
             raise ValueError("The header of the csv file is not correct.")
         
         # resort the fields in the row according to the header
@@ -35,7 +35,7 @@ def read_from_csv(read_path:str):
         reader = csv.reader(f)
         header = next(reader, None)
         if not header:
-            raise ValueError("The csv file is empty.")
+            return list()
         rows = list()
         for row in reader:
             rows.append(row)
@@ -44,3 +44,10 @@ def read_from_csv(read_path:str):
 def filter_logs(logs:list, *fields):
     logs = [log for log in logs if all(field in log for field in fields)]
     return logs
+
+def get_current_time():
+    ''' 
+    Get the current time
+    '''
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
