@@ -2,13 +2,15 @@ import os
 import csv
 from datetime import datetime
 
-def save_to_csv(save_path:str, fields:list, rows:list):
+def save_to_csv(save_path:str, csv_data):
     ''' 
     Save the results to a csv file
     '''
     if not os.path.exists(save_path):
         with open(save_path, 'w') as f:
             pass
+    
+    fields, rows = csv_data
     
     import csv
     with open(save_path, 'r') as f:
