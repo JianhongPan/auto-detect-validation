@@ -1,28 +1,43 @@
 import os
 import csv
 from datetime import datetime
+from queue import PriorityQueue
+import csv
 
-def save_to_csv(save_path:str, csv_data):
+def save_to_csv(save_path:str, csv_data:tuple):
     ''' 
     Save the results to a csv file
     '''
+    fields, rows = csv_data
+    # check the type of the fields and rows
+    if not isinstance(fields, list) or not isinstance(rows, list):
+        raise ValueError("The csv data are not correct.")
+    # if the rows are not 2D, convert them to 2D
+    if not isinstance(rows[0], list):
+        rows = [rows]
+    # check the type of the items in fields and rows
+    if any(not isinstance(field, str) for field in fields):
+        raise ValueError("The items in the fields are not correct.")
+    if any(any(not isinstance(item, str) for item in row) for row in rows):
+        raise ValueError("The items in the rows are not correct.")
+
+    # check if the file exists and create the file if not
     if not os.path.exists(save_path):
         with open(save_path, 'w') as f:
             pass
     
-    fields, rows = csv_data
-    
-    import csv
+    # get the header of the csv file
     with open(save_path, 'r') as f:
         reader = csv.reader(f)
         header = next(reader, None)
 
+    # write the results to the csv file
     with open(save_path, 'a') as f:
         writer = csv.writer(f)
         # if the first line is not the header, write the header
         if not header:
             writer.writerow(fields)
-        # check if the each field in the header
+        # check if each field exists in the header
         elif any(field not in fields for field in header):
             raise ValueError("The header of the csv file is not correct.")
         
@@ -44,11 +59,11 @@ def read_from_csv(read_path:str):
             rows.append(row)
     return header, rows
 
-def fields_select(csv, fields:list):
+def fields_select(csv_data, fields:list):
     '''
     Filter the fields based on the fileds
     '''
-    header, rows = csv
+    header, rows = csv_data
     rows = [[row[header.index(field)] for field in fields] for row in rows]
     return fields, rows
 
@@ -70,20 +85,20 @@ def get_mapping(mapping_csv):
         return mapping_dict[x] if x in mapping_dict else x
     return mapping
 
-def field_apply(csv, field:list, func):
+def field_apply(csv_data, field:list, func):
     '''
     Apply the function to the fields
     '''
-    header, rows = csv
+    header, rows = csv_data
     field_index = header.index(field)
     rows = [[func(item) if i == field_index else item for i, item in enumerate(row)] for row in rows]
     return header, rows
 
-def csv_sort(csv, field, prior_map=lambda x: x):
+def csv_sort(csv_data, field, prior_map=lambda x: x):
     '''
     Sort the rows based on the field
     '''
-    header, rows = csv
+    header, rows = csv_data
     field_index = header.index(field)
     sort_func = lambda x: prior_map(x[field_index])
     rows = sorted(rows, key=sort_func)

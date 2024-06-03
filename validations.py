@@ -87,7 +87,7 @@ def link_all(from_path, to_path, exclude=[]):
         link_path = os.path.join(to_path, file_name)
         os.symlink(file_path, link_path)
 
-def test_model(model, dataset, gpu_id):
+def test_model(benchmark_info, model, dataset, gpu_id):
     model_config_path = os.path.realpath(model['model_config_path'])
     model_checkpoint_path = os.path.realpath(get_checkpoint_path(model))
     
@@ -106,14 +106,15 @@ def test_model(model, dataset, gpu_id):
     # get the test results
     try:
         output = stdout.decode().splitlines()
-        fields = ['mAP_50_95', 'mAP_50', 'mAR_50', 'mAR_50_95']
+        fields = [*benchmark_info[0], 'mAP_50_95', 'mAP_50', 'mAR_50_95', 'mAR_50']
         row = [
+            *benchmark_info[1],
             rows_filter(output, 'Average Precision', 'area=   all', 'IoU=0.50:0.95')[0].split()[-1],
             rows_filter(output, 'Average Precision', 'area=   all', 'IoU=0.50     ')[0].split()[-1],
             rows_filter(output, 'Average Recall', 'area=   all', 'IoU=0.50     ')[0].split()[-1],
             rows_filter(output, 'Average Recall', 'area=   all', 'IoU=0.50:0.95')[0].split()[-1],
         ]
-        return fields, [row]
+        return fields, row
     except:
         raise ValueError("The test results are not correct.")
 
@@ -123,20 +124,18 @@ def run_benchmark(running_pwd, benchmark_info, model, dataset, gpu_id, result_pa
 
     try:
         # check if the model has been tested on the dataset
-        headers, rows = read_from_csv(result_path)
-        _, result_field_list = fields_select((headers, rows), benchmark_info[0])
+        headers, row = read_from_csv(result_path)
+        _, result_field_list = fields_select((headers, row), benchmark_info[0])
         if list(benchmark_info[1][0]) in result_field_list:
             print(f"{get_current_time()}: The model {model['Name']} has been tested on the dataset {dataset['Name']}.")
             return
         
         # test the model
         print(f"{get_current_time()}: Testing the model {model['Name']} on the dataset {dataset['Name']}...")
-        result = test_model(model, dataset, gpu_id)
+        result = test_model(benchmark_info, model, dataset, gpu_id)
 
         # save the results to a csv file
-        fields = benchmark_info[0]+result[0]
-        rows = [benchmark_info[1][0]+result[1][0]]
-        save_to_csv(result_path, (fields, rows))
+        save_to_csv(result_path, result)
         print(f"{get_current_time()}: Finished testing the model {model['Name']} on the dataset {dataset['Name']}.")
 
     except Exception as ValueError:
@@ -169,9 +168,7 @@ def main():
             actor_type, adv_type, benchmark = dataset['Name'].split('_')
             benchmark_info = [
                 ['actor_type', 'adv_type', 'benchmark', 'model_name'],
-                [
-                    [actor_type, adv_type, benchmark, model['Name']],
-                ]
+                [actor_type, adv_type, benchmark, model['Name']],
             ]
 
             waiting_iteration = 0
