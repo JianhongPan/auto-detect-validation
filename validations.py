@@ -106,25 +106,26 @@ def test_model(model, dataset, gpu_id):
     # get the test results
     try:
         output = stdout.decode().splitlines()
-        result = {
-            'mAP_50_95': rows_filter(output, 'Average Precision', 'area=   all')[0].split()[-1],
-            'mAP_50': rows_filter(output, 'Average Precision', 'area=   all')[1].split()[-1],
-            'mAP_75': rows_filter(output, 'Average Precision', 'area=   all')[2].split()[-1],
-            'mAR_50_95': rows_filter(output, 'Average Recall', 'area=   all')[0].split()[-1]
-        }
-        return result
+        fields = ['mAP_50_95', 'mAP_50', 'mAR_50', 'mAR_50_95']
+        row = [
+            rows_filter(output, 'Average Precision', 'area=   all', 'IoU=0.50:0.95')[0].split()[-1],
+            rows_filter(output, 'Average Precision', 'area=   all', 'IoU=0.50     ')[0].split()[-1],
+            rows_filter(output, 'Average Recall', 'area=   all', 'IoU=0.50     ')[0].split()[-1],
+            rows_filter(output, 'Average Recall', 'area=   all', 'IoU=0.50:0.95')[0].split()[-1],
+        ]
+        return fields, [row]
     except:
         raise ValueError("The test results are not correct.")
 
-def run_benchmark(running_pwd, benchmark_fields, model, dataset, gpu_id, result_path):
+def run_benchmark(running_pwd, benchmark_info, model, dataset, gpu_id, result_path):
     # change the working directory to the running directory
     os.chdir(running_pwd)
 
     try:
         # check if the model has been tested on the dataset
         headers, rows = read_from_csv(result_path)
-        _, result_field_list = fields_select(headers, rows, benchmark_fields.keys())
-        if list(benchmark_fields.values()) in result_field_list:
+        _, result_field_list = fields_select((headers, rows), benchmark_info.keys())
+        if list(benchmark_info.values()) in result_field_list:
             print(f"{get_current_time()}: The model {model['Name']} has been tested on the dataset {dataset['Name']}.")
             return
         
@@ -133,8 +134,9 @@ def run_benchmark(running_pwd, benchmark_fields, model, dataset, gpu_id, result_
         result = test_model(model, dataset, gpu_id)
 
         # save the results to a csv file
-        result = {**benchmark_fields, **result}
-        save_to_csv(result_path, result.keys(), result.values())
+        fields = benchmark_info[0]+list(result.keys())
+        rows = [benchmark_info[1]+list(result.values())]
+        save_to_csv(result_path, (fields, rows))
         print(f"{get_current_time()}: Finished testing the model {model['Name']} on the dataset {dataset['Name']}.")
 
     except Exception as ValueError:
@@ -144,7 +146,7 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser(description='Test the models')
     parser.add_argument('--data-path', default='dataset', type=str, help='The path to all the datasets')
-    parser.add_argument('--gpus', default=4, type=int, help='The number of GPUs to use')
+    parser.add_argument('--gpus', default=1, type=int, help='The number of GPUs to use')
     parser.add_argument('--result-path', default='results.csv', type=str, help='The path to save the results')
     return parser.parse_args()
 
@@ -165,12 +167,12 @@ def main():
 
             # get the fields of the results
             actor_type, adv_type, benchmark = dataset['Name'].split('_')
-            benchmark_fields = {
-                'actor_type': actor_type,
-                'adv_type': adv_type,
-                'benchmark': benchmark,
-                'model_name': model['Name']
-            }
+            benchmark_info = [
+                ['actor_type', 'adv_type', 'benchmark', 'model_name']
+                [
+                    [actor_type, adv_type, benchmark, model['Name']],
+                ]
+            ]
 
             waiting_iteration = 0
             while True:
@@ -188,9 +190,7 @@ def main():
                     break
                 # print the running processes every minute
                 if waiting_iteration % 60 == 0:
-                    previous_time = time.time()
                     print(f"{get_current_time()}: Running processes: {*[(process['process'].pid, process['gpu_id'], int(time.time() - process['start_time']), process['model']['Name'], process['dataset']['Name']) for process in process_list],}")
-                    prev_print_time = time.time()
                 time.sleep(1)
                 waiting_iteration += 1
                 
@@ -199,7 +199,7 @@ def main():
             os.makedirs(running_pwd, exist_ok=True)
             os.makedirs(os.path.join(running_pwd, 'data', 'coco'), exist_ok=True)
             link_all('mmdetection', running_pwd, exclude=['data'])
-            p = Process(target=run_benchmark, args=(running_pwd, benchmark_fields, model, dataset, gpu_id, result_path))
+            p = Process(target=run_benchmark, args=(running_pwd, benchmark_info, model, dataset, gpu_id, result_path))
             p.start()
             process_list.append({'process': p, 'gpu_id': gpu_id, 'start_time': time.time(), 'model': model, 'dataset': dataset})
          

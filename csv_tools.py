@@ -2,8 +2,6 @@ import os
 import csv
 from datetime import datetime
 
-from attr import fields
-
 def save_to_csv(save_path:str, fields:list, rows:list):
     ''' 
     Save the results to a csv file
@@ -79,13 +77,37 @@ def field_apply(csv, field:list, func):
     rows = [[func(item) if i == field_index else item for i, item in enumerate(row)] for row in rows]
     return header, rows
 
+def csv_sort(csv, field, prior_map=lambda x: x):
+    '''
+    Sort the rows based on the field
+    '''
+    header, rows = csv
+    field_index = header.index(field)
+    sort_func = lambda x: prior_map(x[field_index])
+    rows = sorted(rows, key=sort_func)
+    return header, rows
+
+def get_prior_map(special_priorities:list=None):
+    '''
+    Get the priority map based on the special priorities for sorting
+    '''
+    if special_priorities is None:
+        special_priorities = []
+    low_priority_prefix = '9' * len(special_priorities)
+
+    def prior_map(x):
+        if x in special_priorities:
+            return str(special_priorities.index(x))
+        else:
+            return low_priority_prefix + x
+    return prior_map
+
 def rows_filter(rows:list, *regexes):
     '''
     Filter the rows based on the regexes
     '''
     rows = [row for row in rows if all(regex in row for regex in regexes)]
     return rows
-
 
 def rows_to_2dcoordinates(rows):
     '''

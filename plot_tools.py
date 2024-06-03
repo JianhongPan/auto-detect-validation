@@ -1,10 +1,11 @@
 from turtle import width
 import numpy as np
+import random
 import matplotlib.pyplot as plt
 from csv_tools import read_from_csv, fields_select, rows_to_2dcoordinates
 
 
-def n_plot_bar(title, x_label, y_label, n, x, y, columns, direction='vertical', legend=False):
+def n_plot_bar(title, x_label, y_label, n, x, y, columns, ticks=None, direction='vertical', legend=False):
     '''
     Plot n bar plots for each model and concatenate the plots
     '''
@@ -18,8 +19,9 @@ def n_plot_bar(title, x_label, y_label, n, x, y, columns, direction='vertical', 
     # from warm to cold len(x) colors
     if len(x) > 20:
         raise ValueError("The color sapce can not satisfy the legend")
+    cm = plt.get_cmap(random.choice(['tab20', 'tab20b', 'tab20c']))
     color_scaler = np.linspace(0, 1, len(x)).tolist()
-    colors = plt.cm.tab20b(color_scaler)
+    colors = cm(color_scaler)
 
     for i, axs in enumerate(axss):
         for j, ax in enumerate(axs):
@@ -67,19 +69,22 @@ def n_plot_bar(title, x_label, y_label, n, x, y, columns, direction='vertical', 
                     ax.bar(x_k, y[i * columns + j][k], color=colors[k], label=x_k, width=0.5, edgecolor='black', linewidth=0.5)
                 else:
                     ax.barh(x_k, y[i * columns + j][k], color=colors[k], label=x_k, height=0.6, edgecolor='black', linewidth=0.5)
-            
+
+            if ticks is None:
+                ticks = np.arange(0, 1.1, 0.2)
+
             if direction == 'vertical':
                 # set the vertical grid at the backgroud
                 ax.yaxis.grid(True)
                 ax.yaxis.grid(linewidth=0.1)
                 ax.set_axisbelow(True)
-                ax.set_yticks(np.arange(0, 1.1, 0.2))
+                ax.set_yticks(ticks)
             else:
                 # set the vertical grid at the backgroud
                 ax.xaxis.grid(True)
                 ax.xaxis.grid(linewidth=0.1)
                 ax.set_axisbelow(True)
-                ax.set_xticks(np.arange(0, 1.1, 0.2))
+                ax.set_xticks(ticks)
                 # set the tick width
 
     for i, axs in enumerate(axss):
