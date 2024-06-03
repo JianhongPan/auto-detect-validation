@@ -124,8 +124,8 @@ def run_benchmark(running_pwd, benchmark_info, model, dataset, gpu_id, result_pa
     try:
         # check if the model has been tested on the dataset
         headers, rows = read_from_csv(result_path)
-        _, result_field_list = fields_select((headers, rows), benchmark_info.keys())
-        if list(benchmark_info.values()) in result_field_list:
+        _, result_field_list = fields_select((headers, rows), benchmark_info[0])
+        if list(benchmark_info[1][0]) in result_field_list:
             print(f"{get_current_time()}: The model {model['Name']} has been tested on the dataset {dataset['Name']}.")
             return
         
@@ -134,8 +134,8 @@ def run_benchmark(running_pwd, benchmark_info, model, dataset, gpu_id, result_pa
         result = test_model(model, dataset, gpu_id)
 
         # save the results to a csv file
-        fields = benchmark_info[0]+list(result.keys())
-        rows = [benchmark_info[1]+list(result.values())]
+        fields = benchmark_info[0]+result[0]
+        rows = [benchmark_info[1][0]+result[1][0]]
         save_to_csv(result_path, (fields, rows))
         print(f"{get_current_time()}: Finished testing the model {model['Name']} on the dataset {dataset['Name']}.")
 
@@ -168,7 +168,7 @@ def main():
             # get the fields of the results
             actor_type, adv_type, benchmark = dataset['Name'].split('_')
             benchmark_info = [
-                ['actor_type', 'adv_type', 'benchmark', 'model_name']
+                ['actor_type', 'adv_type', 'benchmark', 'model_name'],
                 [
                     [actor_type, adv_type, benchmark, model['Name']],
                 ]
