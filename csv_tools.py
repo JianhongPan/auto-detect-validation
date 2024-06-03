@@ -1,137 +1,207 @@
 import os
-import csv
-from datetime import datetime
+from os.path import realpath
+import subprocess
+import time
+from multiprocessing import Process
+import yaml
+from csv_tools import save_to_csv, read_from_csv, rows_filter, get_current_time, fields_select
 
-def save_to_csv(save_path:str, csv_data):
-    ''' 
-    Save the results to a csv file
-    '''
-    if not os.path.exists(save_path):
-        with open(save_path, 'w') as f:
-            pass
-    
-    fields, rows = csv_data
-    
-    import csv
-    with open(save_path, 'r') as f:
-        reader = csv.reader(f)
-        header = next(reader, None)
 
-    with open(save_path, 'a') as f:
-        writer = csv.writer(f)
-        # if the first line is not the header, write the header
-        if not header:
-            writer.writerow(fields)
-        # check if the each field in the header
-        elif any(field not in fields for field in header):
-            raise ValueError("The header of the csv file is not correct.")
+def get_config_list(config_dir_path):
+
+    # load the name of candidate model for evaluation
+    yml_path = 'model_list.yml'
+    if os.path.exists(yml_path):
+        with open(yml_path, 'r') as f:
+            model_list = yaml.safe_load(f)
+
+    # load the model's config for evaluation
+    config_list = list()
+    # create a directory to save config and checkpoint files
+    if not os.path.exists('checkpoints'):
+        os.mkdir('checkpoints')
+
+    # list all the available models
+    for model_name in os.listdir(config_dir_path):
+        config_path = os.path.join(config_dir_path, model_name)
+        yml_path = os.path.join(config_path, 'metafile.yml')
+        if os.path.exists(yml_path):
+            with open(yml_path, 'r') as f:
+                config = yaml.safe_load(f)
+                # print all the submodels
+                if 'Models' in config:
+                    config = config['Models']
+                for submodel in config:
+                    if submodel['Name'] not in model_list:
+                        continue
+                    py_path = os.path.join(config_path, submodel['Name'] + '.py')
+                    submodel['model_config_path'] = realpath(py_path)
+                    config_list.append(submodel)
+
+    return config_list
+    
+def get_checkpoint_path(model):
+    checkpoint_path = os.path.join('checkpoints', model["Name"] + '.pth')
+    checkpoint_hash_path = os.path.join('checkpoints', model["Name"] + '.md5')
+    checkpoint_url = model["Weights"]
+    if os.path.exists(checkpoint_path) and os.path.exists(checkpoint_hash_path):
+        # get the hash of the local model
+        current_model_hash = subprocess.run(['md5sum', checkpoint_path], stdout=subprocess.PIPE).stdout.decode().split()[0]
+        with open(checkpoint_hash_path, 'r') as f:
+            model_hash = f.read().strip()
+        if current_model_hash == model_hash:
+            return checkpoint_path
+
+    print(f"{get_current_time()}: Downloading the checkpoint of the model {model['Name']}...")
+    try:
+        subprocess.run(['wget', checkpoint_url, '-O', checkpoint_path], stdout=subprocess.PIPE).stdout.decode()
+    except:
+        print(f"{get_current_time()}: Failed to download the checkpoint of the model {model['Name']}.")
+    # get the hash of the downloaded model
+    model_hash = subprocess.run(['md5sum', checkpoint_path], stdout=subprocess.PIPE).stdout.decode().split()[0]
+    with open(checkpoint_hash_path, 'w') as f:
+        f.write(model_hash)
+    return checkpoint_path
+
+def get_dataset_list(data_path):
+    dataset_list = list()
+    for dataset_name in os.listdir(data_path):
+        dataset_path = os.path.join(data_path, dataset_name)
+        if os.path.isdir(dataset_path):
+            dataset_list.append({'Name': dataset_name, 'Path': realpath(dataset_path)})
+    return dataset_list
+
+def link_all(from_path, to_path, exclude=[]):
+    # remove all the existing symbol links in the data/coco directory
+    for file_name in os.listdir(to_path):
+        file_path = os.path.join(to_path, file_name)
+        if os.path.islink(file_path):
+            os.unlink(file_path)
+
+    # create symbol links of all the files in the given dataset in data/coco
+    for file_name in os.listdir(from_path):
+        if file_name in exclude:
+            continue
+        file_path = os.path.join(from_path, file_name)
+        file_path = os.path.realpath(file_path)
+        link_path = os.path.join(to_path, file_name)
+        os.symlink(file_path, link_path)
+
+def test_model(model, dataset, gpu_id):
+    model_config_path = os.path.realpath(model['model_config_path'])
+    model_checkpoint_path = os.path.realpath(get_checkpoint_path(model))
+    
+    # link the dataset to the data/coco directory
+    link_all(dataset['Path'], os.path.join('data', 'coco'))
+    # setting the environment variable for subproces
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+    # run the test script
+    try:
+        subprocess_instance = subprocess.Popen(['python', os.path.join('tools', 'test.py'), model_config_path, model_checkpoint_path], stdout=subprocess.PIPE)
+        stdout, stderr = subprocess_instance.communicate(timeout=1200)
+    except subprocess.TimeoutExpired:
+        subprocess_instance.terminate()
+        raise ValueError("The test results are not complete.")
+
+    # get the test results
+    try:
+        output = stdout.decode().splitlines()
+        fields = ['mAP_50_95', 'mAP_50', 'mAR_50', 'mAR_50_95']
+        row = [
+            rows_filter(output, 'Average Precision', 'area=   all', 'IoU=0.50:0.95')[0].split()[-1],
+            rows_filter(output, 'Average Precision', 'area=   all', 'IoU=0.50     ')[0].split()[-1],
+            rows_filter(output, 'Average Recall', 'area=   all', 'IoU=0.50     ')[0].split()[-1],
+            rows_filter(output, 'Average Recall', 'area=   all', 'IoU=0.50:0.95')[0].split()[-1],
+        ]
+        return fields, [row]
+    except:
+        raise ValueError("The test results are not correct.")
+
+def run_benchmark(running_pwd, benchmark_info, model, dataset, gpu_id, result_path):
+    # change the working directory to the running directory
+    os.chdir(running_pwd)
+
+    try:
+        # check if the model has been tested on the dataset
+        headers, rows = read_from_csv(result_path)
+        _, result_field_list = fields_select((headers, rows), benchmark_info[0])
+        if list(benchmark_info[1][0]) in result_field_list:
+            print(f"{get_current_time()}: The model {model['Name']} has been tested on the dataset {dataset['Name']}.")
+            return
         
-        # resort the fields in the rows according to the header
-        rows = [[row[fields.index(field)] for field in header] for row in rows]
-        writer.writerows(rows)
+        # test the model
+        print(f"{get_current_time()}: Testing the model {model['Name']} on the dataset {dataset['Name']}...")
+        result = test_model(model, dataset, gpu_id)
 
-def read_from_csv(read_path:str):
-    ''' 
-    Read a csv file
-    '''
-    with open(read_path, 'r') as f:
-        reader = csv.reader(f)
-        header = next(reader, None)
-        if not header:
-            return list(), list()
-        rows = list()
-        for row in reader:
-            rows.append(row)
-    return header, rows
+        # save the results to a csv file
+        fields = benchmark_info[0]+result[0]
+        rows = [benchmark_info[1][0]+result[1][0]]
+        save_to_csv(result_path, (fields, rows))
+        print(f"{get_current_time()}: Finished testing the model {model['Name']} on the dataset {dataset['Name']}.")
 
-def fields_select(csv, fields:list):
-    '''
-    Filter the fields based on the fileds
-    '''
-    header, rows = csv
-    rows = [[row[header.index(field)] for field in fields] for row in rows]
-    return fields, rows
+    except Exception as ValueError:
+        print(f"{get_current_time()}: Error: {ValueError} in testing the model {model['Name']}")
 
-def get_mapping(mapping_csv):
-    '''
-    Get the mapping function according to the csv file, e.g.,
-    `get_mapping(mapping_csv)`, where `mapping_csv`: the csv file that contains the mapping, e.g., \\
-    `from,to`   \\
-    `0.82,82`   \\
-    `0.31,31`   \\.
+def get_args():
+    import argparse
+    parser = argparse.ArgumentParser(description='Test the models')
+    parser.add_argument('--data-path', default='dataset', type=str, help='The path to all the datasets')
+    parser.add_argument('--gpus', default=1, type=int, help='The number of GPUs to use')
+    parser.add_argument('--result-path', default='results.csv', type=str, help='The path to save the results')
+    return parser.parse_args()
 
-    The mapping function can be used to map the value to the corresponding value, e.g.,
-    `mapping(0.82) -> 82`.
-    '''
-    header, rows = mapping_csv
-    from_idx, to_idx = header.index('from'), header.index('to')
-    mapping_dict = {row[from_idx]: row[to_idx] for row in rows}
-    def mapping(x):
-        return mapping_dict[x] if x in mapping_dict else x
-    return mapping
+def main():
+    args = get_args()
 
-def field_apply(csv, field:list, func):
-    '''
-    Apply the function to the fields
-    '''
-    header, rows = csv
-    field_index = header.index(field)
-    rows = [[func(item) if i == field_index else item for i, item in enumerate(row)] for row in rows]
-    return header, rows
+    result_path = realpath(args.result_path)
+    if not os.path.exists(result_path):
+        with open(result_path, 'w') as f:
+            pass
 
-def csv_sort(csv, field, prior_map=lambda x: x):
-    '''
-    Sort the rows based on the field
-    '''
-    header, rows = csv
-    field_index = header.index(field)
-    sort_func = lambda x: prior_map(x[field_index])
-    rows = sorted(rows, key=sort_func)
-    return header, rows
+    config_list = get_config_list(os.path.join('mmdetection', 'configs'))
+    dataset_list = get_dataset_list(args.data_path)
 
-def get_prior_map(special_priorities:list=None):
-    '''
-    Get the priority map based on the special priorities for sorting
-    '''
-    if special_priorities is None:
-        special_priorities = []
-    low_priority_prefix = '9' * len(special_priorities)
+    process_list = list()
+    for dataset in dataset_list:
+        for model in config_list:
 
-    def prior_map(x):
-        if x in special_priorities:
-            return str(special_priorities.index(x))
-        else:
-            return low_priority_prefix + x
-    return prior_map
+            # get the fields of the results
+            actor_type, adv_type, benchmark = dataset['Name'].split('_')
+            benchmark_info = [
+                ['actor_type', 'adv_type', 'benchmark', 'model_name'],
+                [
+                    [actor_type, adv_type, benchmark, model['Name']],
+                ]
+            ]
 
-def rows_filter(rows:list, *regexes):
-    '''
-    Filter the rows based on the regexes
-    '''
-    rows = [row for row in rows if all(regex in row for regex in regexes)]
-    return rows
+            waiting_iteration = 0
+            while True:
+                # remove the finished processes
+                process_list = [process for process in process_list if process['process'].is_alive()]
 
-def rows_to_2dcoordinates(rows):
-    '''
-    Convert the rows to coordinates
-    '''
-    x, y = dict(), dict()
-    for row in rows:
-        x[row[0]] = 0
-        y[row[1]] = 0
-    x = [key for key in x]
-    y = [key for key in y]
+                from gpu_tools import wait_for_free_gpus
+                free_gpu_ids = wait_for_free_gpus()
 
-    z = [[0 for _ in range(len(y))] for _ in range(len(x))]
-
-    for row in rows:
-        x_index, y_index = x.index(row[0]), y.index(row[1])
-        z[x_index][y_index] = row[2]
-
-    return x, y, z
-
-def get_current_time():
-    ''' 
-    Get the current time
-    '''
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # remove the potentially occupied GPUs
+                # because the previous testing may not start yet 
+                # and will not be detected by the wait_for_free_gpus function
+                available_gpu_ids = [gpu_id for gpu_id in free_gpu_ids if not any(process['gpu_id'] == gpu_id for process in process_list)]
+                if len(available_gpu_ids) > 0 and len(process_list) < args.gpus: 
+                    break
+                # print the running processes every minute
+                if waiting_iteration % 60 == 0:
+                    print(f"{get_current_time()}: Running processes: {*[(process['process'].pid, process['gpu_id'], int(time.time() - process['start_time']), process['model']['Name'], process['dataset']['Name']) for process in process_list],}")
+                time.sleep(1)
+                waiting_iteration += 1
+                
+            gpu_id = available_gpu_ids[0]
+            running_pwd = f'.running_dir_{gpu_id}'
+            os.makedirs(running_pwd, exist_ok=True)
+            os.makedirs(os.path.join(running_pwd, 'data', 'coco'), exist_ok=True)
+            link_all('mmdetection', running_pwd, exclude=['data'])
+            p = Process(target=run_benchmark, args=(running_pwd, benchmark_info, model, dataset, gpu_id, result_path))
+            p.start()
+            process_list.append({'process': p, 'gpu_id': gpu_id, 'start_time': time.time(), 'model': model, 'dataset': dataset})
+         
+if __name__ == '__main__':
+    main()   
