@@ -1,0 +1,6 @@
+.running*
+*.log
+dataset
+checkpoints
+mmdetection
+results
