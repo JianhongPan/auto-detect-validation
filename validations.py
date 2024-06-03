@@ -1,12 +1,10 @@
 import os
 from os.path import realpath
 import subprocess
-from matplotlib.style import available
-import yaml
 import time
-from csv_tools import save_to_csv, read_from_csv, filter_logs, get_current_time
-from unittest import result
 from multiprocessing import Process
+import yaml
+from csv_tools import save_to_csv, read_from_csv, rows_filter, get_current_time, fields_select
 
 
 def get_config_list(config_dir_path):
@@ -109,34 +107,34 @@ def test_model(model, dataset, gpu_id):
     try:
         output = stdout.decode().splitlines()
         result = {
-            'mAP_50_95': filter_logs(output, 'Average Precision', 'area=   all')[0].split()[-1],
-            'mAP_50': filter_logs(output, 'Average Precision', 'area=   all')[1].split()[-1],
-            'mAP_75': filter_logs(output, 'Average Precision', 'area=   all')[2].split()[-1],
-            'mAR_50_95': filter_logs(output, 'Average Recall', 'area=   all')[0].split()[-1]
+            'mAP_50_95': rows_filter(output, 'Average Precision', 'area=   all')[0].split()[-1],
+            'mAP_50': rows_filter(output, 'Average Precision', 'area=   all')[1].split()[-1],
+            'mAP_75': rows_filter(output, 'Average Precision', 'area=   all')[2].split()[-1],
+            'mAR_50_95': rows_filter(output, 'Average Recall', 'area=   all')[0].split()[-1]
         }
         return result
     except:
         raise ValueError("The test results are not correct.")
 
-def run_benchmark(running_pwd, model, dataset, gpu_id, result_path):
+def run_benchmark(running_pwd, benchmark_fields, model, dataset, gpu_id, result_path):
     # change the working directory to the running directory
     os.chdir(running_pwd)
 
     try:
         # check if the model has been tested on the dataset
-        rows = read_from_csv(result_path)
-        result_field_list = [row[:len(result_fields)] for row in rows]
-        if [*result_fields.values()] in result_field_list:
+        headers, rows = read_from_csv(result_path)
+        _, result_field_list = fields_select(headers, rows, benchmark_fields.keys())
+        if list(benchmark_fields.values()) in result_field_list:
             print(f"{get_current_time()}: The model {model['Name']} has been tested on the dataset {dataset['Name']}.")
             return
         
         # test the model
-        from datetime import datetime
         print(f"{get_current_time()}: Testing the model {model['Name']} on the dataset {dataset['Name']}...")
         result = test_model(model, dataset, gpu_id)
 
         # save the results to a csv file
-        save_to_csv(result_path, **result_fields, **result)
+        result = {**benchmark_fields, **result}
+        save_to_csv(result_path, result.keys(), result.values())
         print(f"{get_current_time()}: Finished testing the model {model['Name']} on the dataset {dataset['Name']}.")
 
     except Exception as ValueError:
@@ -150,7 +148,7 @@ def get_args():
     parser.add_argument('--result-path', default='results.csv', type=str, help='The path to save the results')
     return parser.parse_args()
 
-if __name__ == '__main__':
+def main():
     args = get_args()
 
     result_path = realpath(args.result_path)
@@ -167,7 +165,7 @@ if __name__ == '__main__':
 
             # get the fields of the results
             actor_type, adv_type, benchmark = dataset['Name'].split('_')
-            result_fields = {
+            benchmark_fields = {
                 'actor_type': actor_type,
                 'adv_type': adv_type,
                 'benchmark': benchmark,
@@ -197,12 +195,13 @@ if __name__ == '__main__':
                 waiting_iteration += 1
                 
             gpu_id = available_gpu_ids[0]
-            running_pwd = f'running_dir_{gpu_id}'
+            running_pwd = f'.running_dir_{gpu_id}'
             os.makedirs(running_pwd, exist_ok=True)
             os.makedirs(os.path.join(running_pwd, 'data', 'coco'), exist_ok=True)
             link_all('mmdetection', running_pwd, exclude=['data'])
-            p = Process(target=run_benchmark, args=(running_pwd, model, dataset, gpu_id, result_path))
+            p = Process(target=run_benchmark, args=(running_pwd, benchmark_fields, model, dataset, gpu_id, result_path))
             p.start()
             process_list.append({'process': p, 'gpu_id': gpu_id, 'start_time': time.time(), 'model': model, 'dataset': dataset})
-            
-            
+         
+if __name__ == '__main__':
+    main()   
