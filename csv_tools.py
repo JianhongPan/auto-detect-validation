@@ -38,7 +38,7 @@ def read_from_csv(read_path:str):
         reader = csv.reader(f)
         header = next(reader, None)
         if not header:
-            return list()
+            return list(), list()
         rows = list()
         for row in reader:
             rows.append(row)
