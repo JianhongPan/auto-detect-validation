@@ -4,3 +4,4 @@ dataset
 checkpoints
 mmdetection
 results
+__pycache__
