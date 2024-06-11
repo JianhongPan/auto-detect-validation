@@ -50,8 +50,9 @@ if __name__ == '__main__':
     data['adv_type'] = data['adv_type'].map(dict(zip(mapping_csv['from'], mapping_csv['to'])))
 
     # calculating ASR
-    data = value2asr(data, [args.n_axis, args.l_axis, args.x_axis], args.y_axis)
-    args.y_axis = 'ASR'
+    data = value2asr(data, args.y_axis)
+    # filter the attack method
+    data = data[data['adv_type'] != 'Clean']
     
     # get the number type of the n, x and y axis as well as the legend
     axis_ticklables = {
@@ -66,7 +67,7 @@ if __name__ == '__main__':
     y_min = data[args.y_axis].min()
 
     # plot the data
-    marker = ['.', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd']
+    marker = ['.', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', 'd', '$\\clubsuit$', '$\\spadesuit$', '$\\heartsuit$']
     cm = plt.get_cmap(random.choice(['tab20', 'tab20b', 'tab20c']))
 
     # set the figure size
@@ -78,19 +79,19 @@ if __name__ == '__main__':
     
     # draw the violin plot
     for ticklabel_n, data_n in data.groupby(args.n_axis):
+        n = axis_ticklables[args.n_axis].index(ticklabel_n)
         for ticklabel_x, data_nx in data_n.groupby(args.x_axis):
-            n = axis_ticklables[args.n_axis].index(ticklabel_n)
             x = axis_ticklables[args.x_axis].index(ticklabel_x)
-            axs[n].violinplot(data_nx[args.y_axis], positions=[x], showmeans=True, showextrema=True, widths=1)
+            axs[n].violinplot(data_nx['ASR'], positions=[x], showmeans=True, showextrema=True, widths=1)
     
     # draw the scatter plot
     scatters = list()
     for ticklabel_n, data_n in data.groupby(args.n_axis):
+        n = axis_ticklables[args.n_axis].index(ticklabel_n)
         for ticklabel_l, data_nl in data_n.groupby(args.l_axis):
-            n = axis_ticklables[args.n_axis].index(ticklabel_n)
             l = axis_ticklables[args.l_axis].index(ticklabel_l)
             xs = [axis_ticklables[args.x_axis].index(x) for x in data_nl[args.x_axis]]
-            scatter = axs[n].scatter(x=xs, y=data_nl[args.y_axis], marker=marker[(l+1)%len(marker)], color=cm.colors[l%len(cm.colors)], label=ticklabel_l, s=30)
+            scatter = axs[n].scatter(x=xs, y=data_nl['ASR'], marker=marker[(l+1)%len(marker)], color=cm.colors[l%len(cm.colors)], label=ticklabel_l, s=30)
             if n == 0:
                 scatters.append(scatter)
 

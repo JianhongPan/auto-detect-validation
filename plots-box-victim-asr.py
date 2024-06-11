@@ -46,8 +46,9 @@ if __name__ == '__main__':
     data['adv_type'] = data['adv_type'].map(dict(zip(mapping_csv['from'], mapping_csv['to'])))
 
     # calculating ASR
-    data = value2asr(data, [args.n_axis, args.l_axis, args.x_axis], args.y_axis)
-    args.y_axis = 'ASR'
+    data = value2asr(data, args.y_axis)
+    # filter the attack method
+    data = data[data['adv_type'] != 'Clean']
     
     # get the number type of the n, x and y axis as well as the legend
     axis_ticklables = {
@@ -75,14 +76,14 @@ if __name__ == '__main__':
     # draw the violin plot
     for field_x, data_x in data.groupby(args.x_axis):
         x = axis_ticklables[args.x_axis].index(field_x)
-        ax.violinplot(data_x[args.y_axis], positions=[x], showmeans=True, showextrema=True, widths=1)
+        ax.violinplot(data_x['ASR'], positions=[x], showmeans=True, showextrema=True, widths=1)
 
     # draw the scatter plot
     scatters = list()
     for ticklabel_l, data_l in data.groupby(args.l_axis):
         l = axis_ticklables[args.l_axis].index(ticklabel_l)
         xs = [axis_ticklables[args.x_axis].index(x) for x in data_l[args.x_axis]]
-        scatter = ax.scatter(xs, y=data_l[args.y_axis], marker=marker[(l+1)%len(marker)], color=cm.colors[l%len(cm.colors)], label=ticklabel_l, s=30)
+        scatter = ax.scatter(xs, y=data_l['ASR'], marker=marker[(l+1)%len(marker)], color=cm.colors[l%len(cm.colors)], label=ticklabel_l, s=30)
         scatters.append(scatter)
     
     # set y axis ticks and labels
@@ -112,7 +113,7 @@ if __name__ == '__main__':
     if len(scatters) <= 10: # for vehicle
         lgd = ax.legend(handles=scatters, loc='upper right', ncols=1, fontsize=8, frameon=True, edgecolor='black', fancybox=False, borderpad=0.5)
     else: # for walker
-        lgd = ax.legend(handles=scatters, loc='upper center', ncols=5, fontsize=8, frameon=True, edgecolor='black', fancybox=False, borderpad=0.5, columnspacing=0, bbox_to_anchor=(0.52, 1))
+        lgd = ax.legend(handles=scatters, loc='upper right', ncols=5, fontsize=8, frameon=True, edgecolor='black', fancybox=False, borderpad=0.5, columnspacing=0)
 
     # save the plot to pdf
     plt.savefig(args.save_path, dpi=300, bbox_extra_artists=(lgd,), bbox_inches='tight')
