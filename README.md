@@ -12,17 +12,6 @@ This is a code to automatically validate a set of models as well as datasets and
 - mmdet 3.3.0
 - mmyolo 0.6.0
 
-## Setup of Detection Tools
-To run the code, you need to have the detection tools installed. You can install the mmdetection tools by running the following commands:
-```bash
-git clone https://github.com/open-mmlab/mmdetection.git
-```
-
-You can install the mmyolo tools by running the following commands:
-```bash
-git clone https://github.com/open-mmlab/mmyolo.git
-```
-
 ## Validation
 To run the code, you need to provide the path to the detections and the GPU number to run the code:
 ```python
