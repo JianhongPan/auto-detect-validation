@@ -1,3 +1,4 @@
+from calendar import c
 import os
 from os.path import realpath
 import subprocess
@@ -145,8 +146,9 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser(description='Test the models')
     parser.add_argument('--data-path', default='dataset', type=str, help='The path to all the datasets')
+    parser.add_argument('--detection-path', default='mmdetection', type=str, help='The path to the detection path', choices=['mmdetection', 'mmyolo'])
     parser.add_argument('--gpus', default=1, type=int, help='The number of GPUs to use')
-    parser.add_argument('--result-path', default='results.csv', type=str, help='The path to save the results')
+    parser.add_argument('--result-path', default='results/results.csv', type=str, help='The path to save the results')
     return parser.parse_args()
 
 def main():
@@ -157,7 +159,7 @@ def main():
         with open(result_path, 'w') as f:
             pass
 
-    config_list = get_config_list(os.path.join('mmdetection', 'configs'))
+    config_list = get_config_list(os.path.join(args.detection_path, 'configs'))
     dataset_list = get_dataset_list(args.data_path)
 
     process_list = list()
@@ -195,7 +197,7 @@ def main():
             running_pwd = f'.running_dir_{gpu_id}'
             os.makedirs(running_pwd, exist_ok=True)
             os.makedirs(os.path.join(running_pwd, 'data', 'coco'), exist_ok=True)
-            link_all('mmdetection', running_pwd, exclude=['data'])
+            link_all(args.detection_path, running_pwd, exclude=['data'])
             p = Process(target=run_benchmark, args=(running_pwd, benchmark_info, model, dataset, gpu_id, result_path))
             p.start()
             process_list.append({'process': p, 'gpu_id': gpu_id, 'start_time': time.time(), 'model': model, 'dataset': dataset})
